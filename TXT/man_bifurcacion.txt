@@ -1,0 +1,14 @@
+nombre_del_sistema
+dimension (n)
+numero de parametros (p)
+indice del parametro a iterar (index)
+valor final del parámetro (fp)
+incremento del parámetro (dp)
+tiempo inicial (t)
+paso de tiempo (dt)
+tiempo donde inicia el ciclo (t1)
+tiempo final (tf)
+x[n] vector de cond iniciales
+P[p] vector de parámetros
+tamaño del punto para el gráfico (ps)
+Nombre del parámetro en LaTex

@@ -1,0 +1,377 @@
+#include "../Headers/libs.hpp"
+#include "../Headers/sistemas.hpp"
+using namespace std;
+
+//para cortar strings
+string Sstr(double d){
+    string S=to_string(d);
+    string r="";
+    for(int i=0;i<6;i++){ 
+        r+=S[i];
+    }
+    return r;
+}
+
+//pedir int al ususario
+int getnum(string mess){
+        cout<<mess;
+        int num;
+        while(!(cin>>num)||num<0){
+                cout<<"numero invalido\n";
+                cin.clear(); cin.ignore(100,'\n');}
+        return num;
+    }
+
+//pedir double al usuario
+double getdouble(string mess){
+        cout<<mess;
+        double num;
+        while(!(cin>>num)){
+                cout<<"numero invalido\n";
+                cin.clear(); cin.ignore(100,'\n');}
+        return num;
+        }
+
+
+double* parametros(string filename){
+    int p;
+    ifstream filetoread(filename.c_str());
+    filetoread>>p;
+    static double *P;
+    for(int i=0;i<p;i++){
+        filetoread >> *(P+i);
+    }
+    filetoread.close();
+    return P;
+}
+
+//mmétodo de runge kutta
+//las entradas son: ndimension del sistema, un arreglo y[] de variables, el paso de tiempo dt, un arreglo yout[] es donde se guarda
+//el valor de la iteracion, double t el tiempo, un arreglo de parametros y una funcion (*sistema)
+void rk4(int n,double y[], double dt, double yout[], double t,double params[],string sistema,
+	void (*menu)(string opcion,double t, double x[],double f[],double P[])){
+
+    int j;
+    double k1[n];
+    double k2[n];
+    double k3[n];
+    double k4[n];
+    double f[n];
+    double yt[n];
+    menu(sistema,t,y,f,params);
+    for(j=0;j<n;j++){
+        k1[j]=dt*f[j];
+        yt[j]=y[j] + 0.5*k1[j];
+        }
+    menu(sistema,t+0.5*dt,yt,f,params);
+    for(j=0;j<n;j++){
+        k2[j]=dt*f[j];
+        yt[j]=y[j] + 0.5*k2[j];
+        }
+    menu(sistema,t+0.5*dt,yt,f,params);
+    for(j=0;j<n;j++){
+        k3[j]=dt*f[j];
+        yt[j]=y[j] + k3[j];
+        }
+    menu(sistema,t+dt,yt,f,params);
+    for(j=0;j<n;j++){
+        k4[j]=dt*f[j];
+        }
+    for(j=0;j<n;j++){
+        yout[j]=y[j] +(1.0/6.0)*(k1[j]+2.0*k2[j]+2.0*k3[j]+k4[j]);
+        }
+    }
+
+//entgradas n es dimension del sistema, x[] es el vector de variables con condiciones iniciales, xout[] es un arreglo auxiliar
+//params[] es el arreglo de parametros, t el tiemmpo inicial, dt el tmaño del paso, lim es el tiempo finaly sistema es la funcion
+//que corressponde al sistema de ecuaciones
+
+bool check4nan(double x[],int n){
+    bool g=false;
+    for(int j=0;j<n;j++){
+        if(isnan(x[j])){g=true;break;}
+    }
+    return g;
+
+}
+
+string make_solution(int n,double x[],double xout[],
+	double params[],double t,double dt, double lim,string sistema,
+	void (*menu)(string opcion,double t, double x[],double f[],double P[])){
+    string nombre="Solutions/sol_"+sistema+"_condini_";
+    for(int i=0;i<n;i++){
+        nombre+=Sstr(x[i])+"_";
+    }
+    string gnuname=nombre+".gnu";
+    string nombre2=nombre+"xy.txt";
+    nombre+=".txt";
+    ofstream solucion,gnufile,xy;
+    int i;
+	double f[n];
+    cout<<"Calculando solucion de sistema, condiciones iniciales ti="
+		<<t<<", xi="<<x[0]<<", ui="<<x[1]<<", con paso de tiempo dt="
+		<<dt<<", hasta el tiempo t="<<lim<<endl;
+    solucion.open(nombre.c_str());
+    gnufile.open(gnuname.c_str());
+    xy.open(nombre2.c_str());
+    gnufile<<"set terminal epslatex font ',14' standalone\n set output 'imagen.tex'"<<endl;
+    gnufile<<"set xlabel \"$x$\" font ',16'\n set ylabel \"$u$\" font ',16'\n set tics font ',12'\n";
+    for(int i=0;i<n+1;i++){
+        if(i!=n){
+            //gnufile<<"plot '"+nombre+"' using 1:"+to_string(i)<<" w l lw 0.5 notitle\n";
+        }
+        else{
+            gnufile<<"plot '"+nombre+"' using 2:3 w l lw 0.5 lc 8 notitle\n";            
+        }
+    }
+    for(;t<=lim;t+=dt){
+		solucion<<t<<" ";
+        for(i=0;i<n;i++){
+            solucion<<x[i]<<" ";
+            }
+        solucion<<endl;
+        xy<<x[0]<<" "<<x[1]<<endl;
+        rk4(n,x,dt,xout,t,params,sistema,menu);
+        if(check4nan(xout,n)){break;}
+        for(int i=0;i<n;i++){ x[i] = xout[i];}
+        }
+    solucion.close();
+    gnufile<<"\nunset output";
+    gnufile.close();
+    xy.close();
+    string cmd="gnuplot "+gnuname;
+    system(cmd.c_str());
+    return "latex imagen.tex && dvips imagen.dvi";
+    //return "gnuplot -persist "+gnuname;
+    }
+
+
+void normalize(double f[],double N[],double dt){
+	double norm=sqrt(f[0]*f[0]+f[1]*f[1]);
+	N[0]=f[0]/norm;
+	N[1]=f[1]/norm;
+	f[0]=N[0]*dt;
+	f[1]=N[1]*dt;
+	}
+
+string diagrama_bifurcacion(int n, double x[], double P[],int np,int index,double finp,double dp,
+    double t,double dt,double t1,double lim, string sistema, string param_name,
+    void (*menu)(string opcion,double t, double x[],double f[],double P[])){
+    auto start=chrono::steady_clock::now();
+    string nombre="Bifurcaciones/"+sistema+"_condini_";
+    for(int i=0;i<n;i++){
+        nombre+=Sstr(x[i])+"_";
+    }
+    string gnuname=nombre+".gnu";
+    nombre+=".txt";
+    ofstream bifurcacion,gnufile;
+    int i;
+    double f[n], xout[n];
+    cout<<"Diagrama de bifurcacion, condiciones iniciales ti="
+        <<t<<", xi="<<x[0]<<", ui="<<x[1]<<", con paso de tiempo dt="
+        <<dt<<", hasta el tiempo t="<<lim<<endl;
+    bifurcacion.open(nombre.c_str());
+    gnufile.open(gnuname.c_str());
+    double p;
+    for(p=P[index];p<=finp;p+=dp){
+        double P2[np],tax;
+        for(int i=0;i<np;i++){ P2[i]=P[i];}
+        P2[index]=p;
+        int c=0;
+        for(tax=t;tax<=lim;tax+=dt){
+            if(tax>=t1 && abs(x[1])<0.001){
+                bifurcacion<<tax<<" "<<p<<" ";
+                for(i=0;i<n;i++){ bifurcacion<<x[i]<<" ";}
+                bifurcacion<<endl;
+            }
+            rk4(n,x,dt,xout,tax,P2,sistema,menu);
+            if(check4nan(xout,n)){break;}
+            for(int i=0;i<n;i++){ x[i] = xout[i];}
+            c++;
+        }
+    }
+    gnufile<<"set terminal epslatex font ',14' standalone"<<endl;
+    gnufile<<"set output 'bify.tex'"<<endl;
+    gnufile<<"set xlabel "<<param_name<<endl;
+    gnufile<<"set ylabel \"$x$\""<<endl;
+    gnufile<<"plot '"+nombre+"' using 2:3 w p ps 0.01 pt 7 lc 8 notitle";
+    gnufile<<"\nunset output"<<endl;
+    bifurcacion.close();
+    gnufile.close();
+    string cmd="gnuplot "+gnuname;
+    auto stop=chrono::steady_clock::now();
+    auto times=chrono::duration_cast<chrono::seconds>(stop-start).count();
+    auto timem=chrono::duration_cast<chrono::minutes>(stop-start).count();
+    cout<<"tiempo de exec en segs: "<<times<<endl;
+    cout<<"tiempo de exec en mins: "<<timem<<endl;
+    system(cmd.c_str());
+    return "latex bify.tex && dvips bify.dvi";
+//    return "gnuplot -persist "+gnuname;
+}
+
+string get_bifurcacion(string filename){
+    ifstream datos(filename.c_str());
+    string sistema,param_name;
+    int n,np,index;
+    double t,dt,lim,t1,finp,dp;
+    getline(datos,sistema);
+    datos>>n;
+    datos>>np;
+    datos>>index;
+    datos>>finp;
+    datos>>dp;
+    datos>>t;
+    datos>>dt;
+    datos>>t1;
+    datos>>lim;
+    double x[n],xout[n],P[np];
+    for(int i=0;i<n;i++){
+        datos>>x[i];
+    }
+
+    for(int i=0;i<np;i++){
+        datos>>P[i];
+    }
+    datos>>param_name;
+    datos.close();
+    return diagrama_bifurcacion(n,x,P,np,index,finp,dp,t,dt,t1,lim,sistema,param_name,menu);
+
+}
+
+string phase_portrait(int n,double t,double dt,double lim,double I[][2],
+	double dx,string sistema,double params[], int p,
+	void (*menu)(string opcion,double t,double x[],double f[],double P[])){
+
+	int color=1;
+	ofstream file,comando;
+    double minx,maxx,miny,maxy;
+	string name,dir,cmd,title="set title 'Retrato fase "+sistema+" ";
+    dir="Portraits/"+sistema;
+    for(int i=0;i<p;i++){
+        string chunk1="P"+to_string(i)+"="+Sstr(params[i])+",";
+        string chunk2="P"+to_string(i)+Sstr(params[i])+"_";
+        title+=chunk1;
+        dir+=chunk2;
+    }
+    title+="'";
+	cmd="mkdir "+dir;
+	system(cmd.c_str());
+	double x[n],xout[n],f[n],taux,N[n];
+    string gnuname=dir+"/comando.gnu";
+	comando.open(gnuname.c_str());
+    //comando<<title<<endl;
+    comando<<"set xlabel 'x'"<<endl;
+    comando<<"set ylabel 'u'"<<endl;
+    comando<<"set xrange["<<I[0][0]<<":"<<I[0][1]<<"]"<<endl;
+	comando<<"set yrange["<<I[1][0]<<":"<<I[1][1]<<"]"<<endl;
+	comando<<"plot ";
+    double hs=abs((I[0][0]-I[0][1])/90);
+	for(double l=I[0][0];l<=I[0][1];l+=dx){
+			//color++;
+		for(double k=I[1][0];k<=I[1][1];k+=dx){
+            name=dir+"/sol_"+Sstr(l)+"_"+Sstr(k)+".txt";
+			file.open(name.c_str());
+			taux=t; x[0]=l; x[1]=k; int z=0;
+			for(;taux<lim;taux+=dt){
+				rk4(n,x,dt,xout,taux,params,sistema,menu);
+                if(check4nan(xout,n)){break;}
+				f[0]=xout[0]-x[0];
+				f[1]=xout[1]-x[1];
+				file<<x[0]<<" "<<x[1]<<" "<<f[0]<<" "<<f[1]<<endl;
+				for(int i=0;i<n;i++){ x[i]=xout[i];}
+                z++;
+				}
+			file.close();
+			comando<<"'"<<name<<"'"<<" w vec head filled size "<<hs<<",10 linecolor black notitle,";
+			}
+		}
+    return "gnuplot -persist "+gnuname;
+	}
+
+string Retrato_fase(string filename){
+    ifstream datos(filename.c_str());
+    string sistema;
+    int n,p;
+    double t,dx,dt,lim;
+    getline(datos,sistema);
+    datos>>n;
+    datos>>p;
+    datos>>t;
+    datos>>dt;
+    datos>>lim;
+    datos>>dx;
+    double P[p],I[n][2];
+    for(int i=0;i<p;i++){
+        datos>>P[i];
+    }
+    for(int i=0;i<n;i++){
+        datos>>I[i][0];
+        datos>>I[i][1];
+    }
+    datos.close();
+    return phase_portrait(n,t,dt,lim,I,dx,sistema,P,p,menu);
+}
+
+void valor_promedio(double inicio,double fin,void (*funcion)(),double P[]){
+
+}
+
+
+string get_solucion(string filename){
+    ifstream datos(filename.c_str());
+    string sistema;
+    int n,p;
+    double t,dt,lim;
+    getline(datos,sistema);
+    datos>>n;
+    datos>>p;
+    datos>>t;
+    datos>>dt;
+    datos>>lim;
+    double x[n],xout[n],P[p];
+    for(int i=0;i<n;i++){
+        datos>>x[i];
+    }
+
+    for(int i=0;i<p;i++){
+        datos>>P[i];
+    }
+    datos.close();
+    return make_solution(n,x,xout,P,t,dt,lim,sistema,menu);
+
+}
+
+
+void resuelve_cubica(double A[],double x[]){
+    double a=A[1]/A[0]; double b=A[2]/A[0]; double c=A[3]/A[0];
+    double p=(3*b-pow(a,2))/3; double q=(2*pow(a,3)-9*a*b+27*c)/27;
+    double dt=pow(q,2)/4+pow(p,3)/27;
+    if(dt==0){
+        if(p==q==0){ 
+            x[0]=-a/3;
+            x[1]=x[0];
+            x[2]=x[0];
+        }
+        if(p*q!=0){
+            x[0]=(-3.0/2.0)*q/p-a/3;
+            x[1]=x[0];
+            x[2]=(-4.0/9.0)*pow(p,2)/q -a/3;
+        }
+    }
+    if(dt>0){
+        double e=1.0/3.0;
+        x[0]=pow((-q/2+sqrt(dt)),e)+pow((-q/2-sqrt(dt)),e)-a/3;
+        x[1]=x[0];
+        x[2]=x[0];
+    }
+    if(dt<0){
+        double pi=acos(-1);
+        double th=acos(-q/(2*sqrt(pow(-p/3,3))));
+        for(int i=0;i<3;i++){
+            x[i]=2*sqrt(-p/3)*cos((th+2*i*pi)/3)-a/3;
+        }
+    }
+    sort(x,x+3);
+}
+
+void puntos_fijos(double inicio,double fin,double P[]){}
